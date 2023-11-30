@@ -1,11 +1,12 @@
 import os
 from ultralytics import YOLO
 import cv2
+import util
 
 
 VIDEOS_DIR = os.path.join('/Users/inspiredghost/Documents/ModelData', 'videos')
 
-video_path = os.path.join(VIDEOS_DIR, '20231111_130030.mp4')
+video_path = os.path.join(VIDEOS_DIR, '20231111_131128.mp4')
 video_path_out = '{}_predicted.mp4'.format(video_path)
 
 cap = cv2.VideoCapture(video_path)
@@ -39,15 +40,29 @@ while ret:
                             cv2.FONT_HERSHEY_SIMPLEX, 1.3, (0, 255, 0), 4, cv2.LINE_AA)
         if class_id == 1:
             if score > threshold_licence:
+
+                license_plate_crop = frame[int(y1):int(y2), int(x1): int(x2), :]
+
+                # Process Licence Plate
+                license_plate_crop_gray = cv2.cvtColor(license_plate_crop, cv2.COLOR_BGR2GRAY)
+                _, license_plate_crop_threshold = cv2.threshold(license_plate_crop_gray, 64, 255, cv2.THRESH_BINARY_INV)
+
+                # Read Licence Plate
+                licence_plate_text, license_plate_score = util.read_license_plate(license_plate_crop_threshold)
+                print("Licence Plate:", licence_plate_text, "at", license_plate_score, "%")
+
+                if licence_plate_text is not None and "LH23KN" in licence_plate_text:
+                    new_filename = licence_plate_text + ".png"
+                    image_frame = frame.copy()
+                    saved_image_path = util.save_and_return_cropped_image(image_frame, frame, x1, y1, x2, y2, "./snaps", new_filename)
+
+                    util.open_image_dialog(licence_plate_text, saved_image_path)
+
                 cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 0, 255), 4)
                 cv2.putText(frame, results.names[int(class_id)].upper(), (int(x1), int(y1 - 20)),
                             cv2.FONT_HERSHEY_SIMPLEX, 1.3, (0, 0, 255), 4, cv2.LINE_AA)
-                cv2.putText(frame, "----------", (int(x1), int(y1 - 60)),
+                cv2.putText(frame, licence_plate_text, (int(x1), int(y1 - 60)),
                             cv2.FONT_HERSHEY_SIMPLEX, 1.3, (0, 0, 255), 4, cv2.LINE_AA)
-
-
-
-
 
     out.write(frame)
     ret, frame = cap.read()
