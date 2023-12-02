@@ -1,14 +1,15 @@
-import string
-import easyocr
-from tqdm import tk
 
-import tkinter as tk_
+import easyocr
+import tkinter as tk
 from PIL import Image, ImageTk
+import pyaudio
+import numpy as np
+import threading
+import time
+
 
 import cv2
 import os
-from PIL import Image
-
 
 # Initialize the OCR reader
 reader = easyocr.Reader(['en'], gpu=True)
@@ -27,7 +28,6 @@ dict_int_to_char = {'0': 'O',
                     '4': 'A',
                     '6': 'G',
                     '5': 'S'}
-
 
 def write_csv(results, output_path):
     """
@@ -96,28 +96,13 @@ def license_complies_format(text):
 
 
 def format_license(text):
-    return text
-    """
-    Format the license plate text by converting characters using the mapping dictionaries.
+    allowed_chars = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J',
+                     'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z']
 
-    Args:
-        text (str): License plate text.
+    # Filter out characters not in allowed_chars
+    filtered_string = ''.join(char for char in text if char.upper() in allowed_chars)
 
-    Returns:
-        str: Formatted license plate text.
-    """
-    """
-    license_plate_ = ''
-    mapping = {0: dict_int_to_char, 1: dict_int_to_char, 4: dict_int_to_char, 5: dict_int_to_char, 6: dict_int_to_char,
-               2: dict_char_to_int, 3: dict_char_to_int}
-    for j in [0, 1, 2, 3, 4, 5, 6]:
-        if text[j] in mapping[j].keys():
-            license_plate_ += mapping[j][text[j]]
-        else:
-            license_plate_ += text[j]
-
-    return license_plate_
-    """
+    return filtered_string
 
 
 def read_license_plate(license_plate_crop):
@@ -173,22 +158,76 @@ def get_car(license_plate, vehicle_track_ids):
 
 
 def open_image_dialog(licence_plate, image_path):
-    root = tk_.Tk()
+    def play_beep():
+        p = pyaudio.PyAudio()
+
+        volume = 0.5  # Range: 0.0 - 1.0
+        fs = 44100  # Sampling frequency
+        duration = 1.0  # Duration in seconds
+
+        f = 440  # Frequency in Hz (adjust as needed)
+        t = np.linspace(0, duration, int(fs * duration), False)
+        data = volume * np.sin(2 * np.pi * f * t)
+
+        stream = p.open(format=pyaudio.paFloat32,
+                        channels=1,
+                        rate=fs,
+                        output=True)
+
+        start_time = time.time()
+        # Play the beep sound for the first 10 seconds
+        while time.time() - start_time < 10:
+            stream.write(data.astype(np.float32).tobytes())
+
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+    def on_closing():
+        root.destroy()
+
+
+    root = tk.Tk()
     root.title(licence_plate)
+
+    # Set a fixed size for the dialog window
+    dialog_width = 1200  # Replace with your desired width
+    dialog_height = 1000  # Replace with your desired height
+    root.geometry(f"{dialog_width}x{dialog_height}")
+
     # Load the original image
     original_image = Image.open(image_path)
+
     # Calculate the initial size of the image
     initial_width, initial_height = original_image.size
-    # Create the ImageTk object for the initial image
-    image = ImageTk.PhotoImage(original_image)
 
-    # Create a label with the initial image
-    label = tk_.Label(root, image=image)
+    # Calculate the scaling factor to fit the image within the dialog
+    width_ratio = dialog_width / initial_width
+    height_ratio = dialog_height / initial_height
+    scaling_factor = min(width_ratio, height_ratio)
+
+    # Resize the image to fit within the dialog
+    resized_width = int(initial_width * scaling_factor)
+    resized_height = int(initial_height * scaling_factor)
+
+    # Resize the image with anti-aliasing using the 'ANTIALIAS' method
+    resized_image = original_image.resize((resized_width, resized_height), Image.LANCZOS)
+
+    # Create the ImageTk object for the resized image
+    image = ImageTk.PhotoImage(resized_image)
+
+    # Create a label with the resized image
+    label = tk.Label(root, image=image)
     label.pack(fill="both", expand=True)
+
+    # Start a separate thread to play the beep sound continuously
+    threading.Thread(target=play_beep).start()
+
+    # Call on_closing function when the dialog window is closed
+    root.protocol("WM_DELETE_WINDOW", on_closing)
 
     # Run the dialog window
     root.mainloop()
-
 
 def save_and_return_cropped_image(big_frame, frame, x1, y1, x2, y2, output_directory, filename):
     # Get the dimensions of the smaller frame
